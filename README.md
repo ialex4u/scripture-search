@@ -164,6 +164,24 @@ npm run data:guru-granth-sahib
 
 To regenerate the PWA icons: `python3 scripts/make-icons.py` (requires Pillow).
 
+## Regenerating and committing the data
+
+Everything under `public/data` is committed — about 155 MB — and Git keeps a full copy of it in
+every commit that changes it. So regenerate deliberately:
+
+- Text changes need a data run: adding or removing a collection, fixing a parser, or correcting a
+  verse. Use that collection's `data:` command, or `npm run data:all`.
+- Editing `data/synonyms.json` re-tags every verse, so it needs `npm run data:all`.
+- UI, styling, search and documentation work needs no data run at all.
+- Any text change also needs `npm run data:indexes` (and `npm run data:registry` if collections
+  or notes changed). `npm run data:all` does both at the end; a single `data:` command does not.
+- Check the cost before committing: `du -sh public/data` and `git diff --stat`. A routine full
+  refresh adds roughly another 155 MB to the repository’s history, so squash or drop data
+  commits you don’t intend to keep.
+
+The largest single file is about 7 MB, well inside GitHub’s 100 MB per-file limit, so the data
+stays in plain Git rather than needing Git LFS.
+
 ## Themes and synonyms
 
 Edit `data/synonyms.json` (a JSON object of `theme: [aliases]`), then run `npm run data:registry`
@@ -193,8 +211,8 @@ npx gh-pages -d dist        # publishes dist/ to the gh-pages branch
 - Output directory: `dist`
 - No environment variables or server runtime required.
 
-Any static host works. The `public/data` folder is ~147 MB (including ~30 MB of gzipped indexes),
-so check your host’s file and size limits; GitHub Pages’ 1 GB limit is ample.
+Any static host works. The `public/data` folder is ~155 MB (including ~33 MB of gzipped search
+indexes), so check your host’s file and size limits; GitHub Pages’ 1 GB limit is ample.
 
 ## PWA and offline behaviour
 
