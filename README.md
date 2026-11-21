@@ -176,13 +176,16 @@ The build uses `base: './'` and hash-based routing, so it works from any sub-pat
 
 ### GitHub Pages
 
+The included workflow `.github/workflows/deploy.yml` builds the site and publishes it on every
+push to `main` (or from the Actions tab, “Run workflow”). Enable it once: **Settings → Pages →
+Build and deployment → Source: GitHub Actions**. No secrets or environment variables are needed.
+
+To publish by hand instead:
+
 ```bash
 npm run build
 npx gh-pages -d dist        # publishes dist/ to the gh-pages branch
 ```
-
-Or add a workflow that runs `npm install && npm run build` and uploads `dist/` with
-`actions/upload-pages-artifact` / `actions/deploy-pages`. Set Pages to “GitHub Actions”.
 
 ### Cloudflare Pages
 
