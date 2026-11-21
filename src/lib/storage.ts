@@ -13,7 +13,9 @@ export const DEFAULT_SETTINGS: Settings = {
   showOriginal: true,
   showTranslit: true,
   showTranslation: true,
-  sortBy: 'religion',
+  // Search results open ranked by match quality; "By religion" stays one
+  // tap away in the Filters row for anyone who prefers the equal grouping.
+  sortBy: 'relevance',
 }
 
 function read<T>(key: string, fallback: T): T {
