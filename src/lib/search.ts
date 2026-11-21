@@ -15,23 +15,73 @@ interface IndexResponse {
 
 const MAX_TERMS = 24
 
-/** Build the set of words to search for: the query itself plus theme synonyms. */
-export function expandQuery(query: string, synonyms: Record<string, string[]>): string[] {
-  const q = query.trim().toLowerCase()
-  if (!q) return []
-  const terms = new Set<string>()
-  for (const word of q.split(/\s+/)) {
-    if (word.length > 1) terms.add(word)
-  }
-  if (q.length > 1) terms.add(q)
+/**
+ * Words too common to carry meaning. Searching them matches nearly every
+ * verse, which used to fill each collection's result quota before the real
+ * words were ever looked at.
+ */
+const STOP_WORDS = new Set(
+  `a an and are as at be been being but by can could did do does for from had has have he her
+   here him his how i if in into is it its me might must my no nor not of on or our shall she
+   should so than that the their them then there these they this those to too up us was we were
+   what when where which who whom why will with would you your`
+    .split(/\s+/)
+    .filter(Boolean),
+)
+
+export interface QueryPlan {
+  /** The words the reader typed, minus stop words. */
+  literal: string[]
+  /** Theme words and their aliases, used to reach verses by meaning. */
+  related: string[]
+  /** The words exactly as typed, in order, for spotting the same phrase in a verse. */
+  phrase: string[]
+}
+
+function queryWords(query: string): string[] {
+  return [
+    ...new Set(
+      query
+        .toLowerCase()
+        .split(/\s+/)
+        .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+        .filter((w) => w.length > 1),
+    ),
+  ]
+}
+
+/**
+ * Separate what the reader typed from the theme vocabulary. The literal words
+ * are what a verse must actually contain; the theme words widen the search
+ * afterwards, so a match on meaning never outranks a match on wording.
+ */
+export function planQuery(query: string, synonyms: Record<string, string[]>): QueryPlan {
+  const words = queryWords(query)
+  if (!words.length) return { literal: [], related: [], phrase: [] }
+  const meaningful = words.filter((w) => !STOP_WORDS.has(w))
+  // A query made only of stop words (“the way”) still deserves a search.
+  const literal = (meaningful.length ? meaningful : words).slice(0, MAX_TERMS)
+  const related: string[] = []
   for (const [theme, aliases] of Object.entries(synonyms)) {
+    if (theme.startsWith('_')) continue
     const group = [theme.toLowerCase(), ...aliases.map((a) => a.toLowerCase())]
-    if (group.includes(q) || q.split(/\s+/).some((w) => group.includes(w))) {
-      group.forEach((term) => terms.add(term))
+    if (!words.some((w) => group.includes(w))) continue
+    for (const term of group) {
+      if (!literal.includes(term) && !related.includes(term)) related.push(term)
     }
-    if (terms.size >= MAX_TERMS) break
+    if (literal.length + related.length >= MAX_TERMS) break
   }
-  return [...terms].slice(0, MAX_TERMS)
+  return {
+    literal,
+    related: related.slice(0, Math.max(0, MAX_TERMS - literal.length)),
+    phrase: words.slice(0, 8),
+  }
+}
+
+/** Words to highlight in results: the query's own words plus its theme words. */
+export function expandQuery(query: string, synonyms: Record<string, string[]>): string[] {
+  const { literal, related } = planQuery(query, synonyms)
+  return [...literal, ...related]
 }
 
 export function matchingThemes(query: string, synonyms: Record<string, string[]>): string[] {
@@ -42,6 +92,25 @@ export function matchingThemes(query: string, synonyms: Record<string, string[]>
       [theme.toLowerCase(), ...aliases.map((a) => a.toLowerCase())].includes(q),
     )
     .map(([theme]) => theme)
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * True when every word the reader typed appears as a whole word, so “brahman”
+ * does not rank “Brahmanaspati” or “Abdur-Rahman” above verses that say
+ * exactly “Brahman”.
+ */
+function saysEveryWord(text: string, terms: string[]): boolean {
+  const hay = text.toLowerCase()
+  return terms.every((term) => new RegExp(`\\b${escapeRe(term)}\\b`).test(hay))
+}
+
+/** True when the words appear in the reader's own order, not just anywhere. */
+function saysPhrase(text: string, terms: string[]): boolean {
+  if (terms.length < 2) return false
+  const pattern = terms.map(escapeRe).join('[^a-z0-9]+')
+  return new RegExp(pattern, 'i').test(text.toLowerCase())
 }
 
 const indexCache = new Map<string, Promise<MiniSearch>>()
@@ -115,8 +184,32 @@ export function searchCollections(
 ): Promise<void> {
   return (async () => {
     const synonyms = await getSynonyms()
-    const terms = expandQuery(query, synonyms)
+    const { literal, related, phrase } = planQuery(query, synonyms)
+    const terms = [...literal, ...related]
     if (!terms.length) return
+    const everything = [...new Set(terms)].slice(0, MAX_TERMS)
+
+    // Tiers run from strictest to loosest. A verse containing every word the
+    // reader typed always ranks above one that merely shares a theme, and a
+    // spelling-tolerant match only fills the gaps. The base score keeps the
+    // tiers ordered even though each one's own scores are not comparable.
+    type Tier = { terms: string[]; mode: 'AND' | 'OR'; fuzzy: boolean; base: number }
+    const candidates: Tier[] = [
+      { terms: literal, mode: 'AND', fuzzy: false, base: 1_000_000 },
+      { terms: literal, mode: 'AND', fuzzy: true, base: 100_000 },
+      { terms: everything, mode: 'OR', fuzzy: false, base: 10_000 },
+      { terms: everything, mode: 'OR', fuzzy: true, base: 1 },
+    ]
+    const tiers = candidates.filter(
+      (tier, i, list) =>
+        tier.terms.length > 0 &&
+        list.findIndex(
+          (t) =>
+            t.mode === tier.mode &&
+            t.fuzzy === tier.fuzzy &&
+            t.terms.join(' ') === tier.terms.join(' '),
+        ) === i,
+    )
 
     let eligible = books.filter((b) => (b.verseCount || 0) > 0 && b.files?.length)
     if (options.religions.length) eligible = eligible.filter((b) => options.religions.includes(b.religion))
@@ -134,13 +227,14 @@ export function searchCollections(
         if (signal.aborted) return
         const seen = new Set<string>()
         const results: SearchHit[] = []
-        for (const term of terms) {
-          if (signal.aborted) return
-          const found = index.search(term, {
-            prefix: term.length > 2,
-            fuzzy: term.length > 3 ? 0.2 : false,
-            boost: { tags: 2.5, translit: 0.8 },
-            combineWith: 'OR',
+        for (const tier of tiers) {
+          if (signal.aborted || results.length >= limit) break
+          const found = index.search(tier.terms.join(' '), {
+            prefix: (term: string) => term.length > 2,
+            fuzzy: tier.fuzzy ? 0.2 : false,
+            // Theme tags help, but not enough to beat the words themselves.
+            boost: { tags: 1.6, translit: 0.8 },
+            combineWith: tier.mode,
           })
           for (const r of found) {
             const id = String(r.id)
@@ -161,7 +255,13 @@ export function searchCollections(
               translationName: String(r.translationName ?? book.translationName ?? ''),
               translator: r.translator ? String(r.translator) : undefined,
               tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
-              score: Number(r.score ?? 0),
+              // Within a tier, a verse that says the word exactly beats one that
+              // only shares a prefix or a theme tag.
+              score:
+                tier.base +
+                (saysPhrase(String(r.translation ?? ''), phrase) ? 20_000 : 0) +
+                (saysEveryWord(String(r.translation ?? ''), literal) ? 2_000 : 0) +
+                Number(r.score ?? 0),
               matchedTerms: terms.filter((t) =>
                 `${r.translation} ${r.translit} ${(r.tags as string[])?.join(' ')}`
                   .toLowerCase()
