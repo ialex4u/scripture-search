@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { Link, NavLink, Route, Routes } from 'react-router-dom'
+import AccountSync from './components/AccountSync'
 
 const Home = lazy(() => import('./pages/Home'))
 const SearchPage = lazy(() => import('./pages/SearchPage'))
@@ -7,6 +8,7 @@ const Browse = lazy(() => import('./pages/Browse'))
 const BookPage = lazy(() => import('./pages/BookPage'))
 const Reader = lazy(() => import('./pages/Reader'))
 const Bookmarks = lazy(() => import('./pages/Bookmarks'))
+const Account = lazy(() => import('./pages/Account'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const About = lazy(() => import('./pages/About'))
 
@@ -14,6 +16,7 @@ const nav = [
   { to: '/', label: 'Search', icon: SearchIcon },
   { to: '/browse', label: 'Browse', icon: BookIcon },
   { to: '/bookmarks', label: 'Saved', icon: BookmarkIcon },
+  { to: '/account', label: 'Account', icon: PersonIcon },
   { to: '/settings', label: 'Settings', icon: GearIcon },
 ]
 
@@ -40,7 +43,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <main className="flex-1 px-4 pb-28 pt-4">{children}</main>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200/80 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg dark:border-stone-700/70 dark:bg-stone-900/95">
-        <div className="mx-auto grid max-w-3xl grid-cols-4">
+        <div className="mx-auto grid max-w-3xl grid-cols-5">
           {nav.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
@@ -76,6 +79,7 @@ function Loading() {
 export default function App() {
   return (
     <Shell>
+      <AccountSync />
       <Suspense fallback={<Loading />}>
         <Routes>
           <Route path="/" element={<Home />} />
@@ -84,6 +88,7 @@ export default function App() {
           <Route path="/browse/:bookId" element={<BookPage />} />
           <Route path="/read/:bookId/:chapter" element={<Reader />} />
           <Route path="/bookmarks" element={<Bookmarks />} />
+          <Route path="/account" element={<Account />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/about" element={<About />} />
           <Route path="*" element={<Home />} />
@@ -113,6 +118,14 @@ function BookmarkIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M6 3h12v18l-6-4.5L6 21z" />
+    </svg>
+  )
+}
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M4.8 20a7.2 7.2 0 0 1 14.4 0" />
     </svg>
   )
 }

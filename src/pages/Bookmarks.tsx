@@ -10,7 +10,12 @@ export default function Bookmarks() {
   const { registry } = useRegistry()
 
   useEffect(() => {
-    setBookmarks(loadBookmarks())
+    const reload = () => setBookmarks(loadBookmarks())
+    reload()
+    // Fires when a bookmark is added elsewhere in the app, or when the account
+    // sync brings in a change made on another device.
+    window.addEventListener('ss:bookmarks-changed', reload)
+    return () => window.removeEventListener('ss:bookmarks-changed', reload)
   }, [])
 
   const scriptFor = (bookId: string) =>

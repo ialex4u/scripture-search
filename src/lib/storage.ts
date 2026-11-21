@@ -54,6 +54,9 @@ export function loadBookmarks(): Bookmark[] {
 
 export function saveBookmarks(bookmarks: Bookmark[]) {
   write(KEYS.bookmarks, bookmarks)
+  // Lets the account sync and any open list react to the change without
+  // every caller having to know about it.
+  window.dispatchEvent(new Event('ss:bookmarks-changed'))
 }
 
 export function toggleBookmark(verse: Verse, bookId: string): Bookmark[] {
